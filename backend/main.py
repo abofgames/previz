@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
@@ -7,6 +8,14 @@ from dotenv import load_dotenv
 
 # Load .env before anything reads os.environ-driven config (the client factory).
 load_dotenv()
+
+# uvicorn configures only its own loggers, so without this the app's own INFO
+# lines — which model ran, which fallback was taken, why a card failed — never
+# reach the console.
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+    format="%(levelname)s %(name)s: %(message)s",
+)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

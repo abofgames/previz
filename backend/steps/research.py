@@ -11,9 +11,10 @@ from ..project import ProjectPaths
 
 log = logging.getLogger("steps.research")
 
-# Free-tier RPM applies to the agent's own turns as well as its tool calls, so
-# scenes are researched a couple at a time rather than all at once.
-_SCENE_CONCURRENCY = 2
+# One scene at a time. The free tier allows 5 Gemini requests/minute and a
+# single research agent spends 3-4 of them on its own turns, so two concurrent
+# agents cannot both finish — measured, not guessed.
+_SCENE_CONCURRENCY = 1
 
 
 async def run_all(

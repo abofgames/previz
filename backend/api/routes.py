@@ -30,15 +30,16 @@ async def start_production(
     refs_dir = runner.paths.look_refs_dir
     refs_dir.mkdir(parents=True, exist_ok=True)
 
-    # Wipe prior uploads so look_dev sees only what was submitted now.
-    for old in refs_dir.iterdir():
-        if old.is_file():
-            old.unlink()
+    incoming = [f for f in look_refs if f.filename]
+    if incoming:
+        # Replace prior references only when new ones were actually uploaded —
+        # otherwise generated look frames would be wiped on every Start.
+        for old in refs_dir.iterdir():
+            if old.is_file():
+                old.unlink()
 
     saved = 0
-    for f in look_refs:
-        if not f.filename:
-            continue
+    for f in incoming:
         (refs_dir / f.filename).write_bytes(await f.read())
         saved += 1
 
@@ -56,6 +57,25 @@ async def retry_node(project: str, body: RetryBody) -> dict:
     runner = get_runner(project)
     await runner.retry(body.node_id)
     return {"retried": body.node_id}
+
+
+class RandomScriptBody(BaseModel):
+    genre: str = ""
+
+
+@router.post("/projects/{project}/random-script")
+async def random_script(project: str, body: RandomScriptBody | None = None) -> dict:
+    """Write a screenplay to storyboard, for users who don't have one to hand."""
+    runner = get_runner(project)
+    return await runner.write_random_script(body.genre if body else "")
+
+
+@router.post("/projects/{project}/random-look")
+async def random_look(project: str) -> dict:
+    """Pick a look and generate its reference frames, so the look branch has
+    something to read without the user sourcing film stills first."""
+    runner = get_runner(project)
+    return await runner.generate_random_look()
 
 
 @router.get("/projects/{project}/graph")

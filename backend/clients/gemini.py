@@ -20,6 +20,8 @@ import asyncio
 import json
 import logging
 import os
+import re
+import time
 from pathlib import Path
 
 from google import genai
@@ -39,8 +41,9 @@ from .prompts import (
 log = logging.getLogger("gemini")
 
 DEFAULT_TEXT_MODEL = "gemini-2.5-flash"
-# Gemini 3 Pro Image is 0 RPD on the free tier — 2.5 Flash Image is the one
-# with a real free daily quota, and it is plenty for storyboard panels.
+# Verified against the live API: EVERY Gemini image model reports
+# `limit: 0` on the free tier — image generation needs a billed key. 2.5 Flash
+# Image is still the right target because it is the cheapest once billing is on.
 DEFAULT_IMAGE_MODEL = "gemini-2.5-flash-image"
 DEFAULT_VIDEO_MODEL = "veo-3.1-generate-preview"
 
@@ -55,14 +58,50 @@ _IMAGE_SEMAPHORE = asyncio.Semaphore(1)
 _MAX_ATTEMPTS = 4
 _BACKOFF_BASE_S = 2.0
 
+# The free tier allows 5 requests/minute/model, and it is the binding limit in
+# practice — far tighter than the daily cap. Every Gemini call in the process
+# is paced through this bucket so a fan-out queues instead of tripping 429s.
+FREE_TIER_RPM = int(os.environ.get("GEMINI_RPM", "5"))
+_rate_lock = asyncio.Lock()
+_recent_calls: list[float] = []
+
+
+async def pace() -> None:
+    """Block until another Gemini request fits inside the RPM budget."""
+    while True:
+        async with _rate_lock:
+            now = time.monotonic()
+            _recent_calls[:] = [t for t in _recent_calls if now - t < 60.0]
+            if len(_recent_calls) < FREE_TIER_RPM:
+                _recent_calls.append(now)
+                return
+            wait = 60.0 - (now - _recent_calls[0]) + 0.25
+        log.info("rate limit: waiting %.1fs for the RPM window", wait)
+        await asyncio.sleep(wait)
+
+
+def _retry_after(msg: str) -> float | None:
+    """Pull the server's own retryDelay out of a 429 body, if it gave one."""
+    m = re.search(r"retryDelay['\"]?:\s*['\"]?(\d+(?:\.\d+)?)s", msg)
+    return float(m.group(1)) if m else None
+
 
 def _friendly(exc: Exception, what: str) -> RuntimeError:
     """Turn an SDK exception into something readable on a failed node card."""
     msg = str(exc)
     if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
+        # `limit: 0` means the free tier never had this quota — waiting for the
+        # daily reset will not help, so say so instead of sending the user away
+        # to watch a counter that is already zero.
+        if "limit: 0" in msg:
+            return RuntimeError(
+                f"{what}: image generation is not available on the Gemini free "
+                "tier (quota limit is 0). It needs a billed API key — enable "
+                "billing on the Cloud project behind this key."
+            )
         return RuntimeError(
-            f"{what}: Gemini free-tier quota exhausted. Daily quotas reset at "
-            "midnight Pacific — check aistudio.google.com/rate-limit."
+            f"{what}: Gemini quota exhausted. Daily quotas reset at midnight "
+            "Pacific — check aistudio.google.com/rate-limit."
         )
     if "401" in msg or "403" in msg or "API key" in msg:
         return RuntimeError(f"{what}: Gemini rejected the API key — check GEMINI_API_KEY.")
@@ -72,16 +111,29 @@ def _friendly(exc: Exception, what: str) -> RuntimeError:
 
 
 async def _with_retry(coro_factory, *, what: str):
-    """Run an SDK call with bounded backoff on transient failures. 429 is not
-    retried — a drained daily quota will not recover in eight seconds, and
-    retrying only burns the per-minute budget too."""
+    """Run an SDK call, paced against the RPM budget and retried on failures
+    that can actually recover.
+
+    Two very different things arrive as 429. `limit: 0` means the quota was
+    never granted and no amount of waiting helps. A per-minute limit comes with
+    the server's own `retryDelay` and clears in under a minute — that one is
+    worth waiting out, because the alternative is failing a card the user is
+    watching.
+    """
     last: Exception | None = None
     for attempt in range(1, _MAX_ATTEMPTS + 1):
+        await pace()
         try:
             return await coro_factory()
         except Exception as e:  # noqa: BLE001 - SDK raises a wide range
             msg = str(e)
             last = e
+            if "429" in msg and "limit: 0" not in msg and attempt < _MAX_ATTEMPTS:
+                delay = _retry_after(msg) or (_BACKOFF_BASE_S * 2**attempt)
+                log.warning("%s: rate limited, waiting %.0fs (%d/%d)",
+                            what, delay, attempt, _MAX_ATTEMPTS)
+                await asyncio.sleep(delay + 0.5)
+                continue
             transient = any(s in msg for s in ("500", "502", "503", "504", "UNAVAILABLE"))
             if transient and attempt < _MAX_ATTEMPTS:
                 log.warning("%s: transient error, retry %d/%d", what, attempt, _MAX_ATTEMPTS)
@@ -143,6 +195,17 @@ class GeminiText(MockTextClient):
         if not text:
             raise RuntimeError("Gemini returned an empty response")
         return text
+
+    async def write_script(self, genre: str = "") -> str:
+        """Write an original scene to storyboard, for when the user has no
+        script to hand. Text-only, so this works on the free tier."""
+        from ..samples import SCRIPT_GEN_PROMPT, random_genre
+
+        log.info("write_script (%s)", genre or "random genre")
+        return await self._generate(
+            SCRIPT_GEN_PROMPT.format(genre=genre or random_genre()),
+            temperature=1.0,
+        )
 
     async def breakdown(self, script: str = "") -> dict:
         if not script.strip():

@@ -25,7 +25,7 @@ from .models import (
 from .project import ProjectPaths
 from .state import EventBus, save_graph
 from .steps import breakdown as breakdown_step
-from .steps import look_dev, panels, plates
+from .steps import look_dev, panels, plates, refgen
 from .steps import research as research_step
 
 log = logging.getLogger("runner")
@@ -160,6 +160,48 @@ class ProjectRunner:
         node = self._find(node_id)
         if node is not None:
             asyncio.create_task(self._retry_node(node))
+
+    async def write_random_script(self, genre: str = "") -> dict:
+        """Produce a screenplay to storyboard when the user hasn't got one.
+
+        Gemini writes an original scene — text-only, so this works on the free
+        tier — and a curated sample stands in if that call fails.
+        """
+        from .samples import random_script
+
+        try:
+            script = (await self.text_client.write_script(genre)).strip()
+            if script:
+                return {"script": script, "source": "gemini"}
+        except Exception as exc:  # noqa: BLE001
+            log.warning("write_script failed, using a curated sample: %s", exc)
+        sample = random_script()
+        return {"script": sample["script"], "title": sample["title"], "source": "sample"}
+
+    async def generate_random_look(self) -> dict:
+        """Pick a look preset and produce reference frames for it, so the user
+        doesn't have to go find film stills before they can start."""
+        from .samples import random_look
+
+        preset = random_look()
+        await self._begin(ids.NODE_LOOK_DEV)
+        try:
+            written = await refgen.generate_look_refs(
+                self.paths, preset, image_client=self.image_client
+            )
+        except Exception as exc:  # noqa: BLE001
+            await self._fail(ids.NODE_LOOK_DEV, "look reference generation", exc)
+            raise
+
+        self.look_note = preset["note"]
+        urls = [self._url_for(p) for p in written]
+        await self._set_meta(ids.NODE_LOOK_DEV, {
+            "ref_urls": urls,
+            "look_name": preset["name"],
+            "look_note": preset["note"],
+        })
+        await self._set_status(ids.NODE_LOOK_DEV, NodeStatus.pending)
+        return {"name": preset["name"], "note": preset["note"], "ref_urls": urls}
 
     # -- execution ---------------------------------------------------------
 

@@ -136,6 +136,13 @@ class MockTextClient:
     def __init__(self, mock: bool = True) -> None:
         self.mock = mock
 
+    async def write_script(self, genre: str = "") -> str:
+        """Mock screenwriter: hand back one of the curated samples."""
+        from ..samples import random_script
+
+        await asyncio.sleep(0.8 + random.random() * 0.4)
+        return random_script()["script"]
+
     async def breakdown(self, script: str = "") -> dict:
         await asyncio.sleep(2.0 + random.random() * 0.6)
         return dict(_CANNED_BREAKDOWN)

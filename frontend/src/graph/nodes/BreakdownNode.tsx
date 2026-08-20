@@ -15,6 +15,8 @@ export type BreakdownNodeData = {
   script: string;
   onScript: (s: string) => void;
   counts?: BreakdownCounts;
+  onRandomScript: () => void;
+  busy?: boolean;
   error?: string;
 };
 
@@ -32,7 +34,24 @@ export default function BreakdownNode({ data }: NodeProps<BreakdownNodeData>) {
       <Handle type="target" position={Position.Top} style={{ background: "#52525b" }} />
       <CardHeader label={data.label} kind="breakdown" status={data.status} />
 
-      <div style={{ padding: 10 }}>
+      <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+        <button
+          onClick={data.onRandomScript}
+          disabled={data.busy}
+          className="nodrag"
+          style={{
+            background: data.busy ? "#1f2530" : "#2dd4bf22",
+            color: data.busy ? "#71717a" : "#2dd4bf",
+            border: "1px solid #2dd4bf66",
+            borderRadius: 8,
+            padding: "7px 10px",
+            fontSize: 11,
+            fontWeight: 700,
+            cursor: data.busy ? "default" : "pointer",
+          }}
+        >
+          {data.busy ? "writing…" : "🎲 Write me a scene"}
+        </button>
         <textarea
           className="nodrag nowheel"
           value={data.script}

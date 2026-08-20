@@ -35,9 +35,9 @@ function sizeFor(kind: NodeKind): Size {
     case "brief":
       return { width: 90, height: 90, rfType: "briefNode" };
     case "look_dev":
-      return { width: 300, height: 250, rfType: "lookDevNode" };
+      return { width: 300, height: 360, rfType: "lookDevNode" };
     case "breakdown":
-      return { width: 360, height: 290, rfType: "breakdownNode" };
+      return { width: 360, height: 330, rfType: "breakdownNode" };
     case "research":
       return { width: 320, height: 290, rfType: "researchNode" };
     case "lookboard":
@@ -78,6 +78,10 @@ export type GraphCallbacks = {
   onLookNote: (s: string) => void;
   onRetry: (nodeId: string) => void;
   onExpand: (nodeId: string) => void;
+  onRandomScript: () => void;
+  onRandomLook: () => void;
+  busyScript: boolean;
+  busyLook: boolean;
 };
 
 function str(v: unknown): string | undefined {
@@ -91,11 +95,15 @@ function buildData(node: GraphNode, cb: GraphCallbacks) {
   switch (node.kind) {
     case "look_dev":
       return { ...base, files: cb.files, onFiles: cb.onFiles,
-               lookNote: cb.lookNote, onLookNote: cb.onLookNote };
+               lookNote: cb.lookNote, onLookNote: cb.onLookNote,
+               refUrls: meta.ref_urls as string[] | undefined,
+               lookName: str(meta.look_name),
+               onRandomLook: cb.onRandomLook, busy: cb.busyLook };
 
     case "breakdown":
       return { ...base, script: cb.script, onScript: cb.onScript,
-               counts: meta.counts as Record<string, number> | undefined };
+               counts: meta.counts as Record<string, number> | undefined,
+               onRandomScript: cb.onRandomScript, busy: cb.busyScript };
 
     case "research":
       return {

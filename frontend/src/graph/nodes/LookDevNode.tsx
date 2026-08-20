@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { Handle, Position, type NodeProps } from "reactflow";
 import { CardShell, CardHeader, ErrorText } from "./shared";
 import { KIND_THEMES } from "../kindThemes";
+import { API } from "../../config";
 import type { NodeStatus } from "../../types";
 
 export type LookDevNodeData = {
@@ -11,6 +12,10 @@ export type LookDevNodeData = {
   onFiles: (f: File[]) => void;
   lookNote: string;
   onLookNote: (s: string) => void;
+  refUrls?: string[];
+  lookName?: string;
+  onRandomLook: () => void;
+  busy?: boolean;
   error?: string;
 };
 
@@ -24,6 +29,51 @@ export default function LookDevNode({ data }: NodeProps<LookDevNodeData>) {
       <CardHeader label={data.label} kind="look_dev" status={data.status} />
 
       <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+        <button
+          onClick={data.onRandomLook}
+          disabled={data.busy}
+          className="nodrag"
+          style={{
+            background: data.busy ? "#1f2530" : `${theme.accent}22`,
+            color: data.busy ? "#71717a" : theme.accent,
+            border: `1px solid ${theme.accent}66`,
+            borderRadius: 8,
+            padding: "7px 10px",
+            fontSize: 11,
+            fontWeight: 700,
+            cursor: data.busy ? "default" : "pointer",
+          }}
+        >
+          {data.busy ? "generating…" : "🎲 Generate a look"}
+        </button>
+
+        {data.refUrls && data.refUrls.length > 0 && (
+          <div>
+            {data.lookName && (
+              <div style={{ fontSize: 10, color: theme.accent, fontWeight: 700, marginBottom: 4 }}>
+                {data.lookName}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 4 }}>
+              {data.refUrls.map((u) => (
+                <img
+                  key={u}
+                  src={API + u}
+                  alt="look reference"
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    height: 46,
+                    objectFit: "cover",
+                    borderRadius: 4,
+                    display: "block",
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
         <label
           className="nodrag"
           onClick={() => inputRef.current?.click()}
@@ -38,8 +88,8 @@ export default function LookDevNode({ data }: NodeProps<LookDevNodeData>) {
           }}
         >
           {data.files.length
-            ? `${data.files.length} reference frame${data.files.length > 1 ? "s" : ""}`
-            : "+ reference frames"}
+            ? `${data.files.length} uploaded frame${data.files.length > 1 ? "s" : ""}`
+            : "or upload your own frames"}
           <input
             ref={inputRef}
             type="file"

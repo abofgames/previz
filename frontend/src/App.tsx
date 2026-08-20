@@ -12,6 +12,8 @@ export default function App() {
   const [lookNote, setLookNote] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [lightbox, setLightbox] = useState<LightboxData | null>(null);
+  const [busyScript, setBusyScript] = useState(false);
+  const [busyLook, setBusyLook] = useState(false);
 
   const onRetry = useCallback((nodeId: string) => {
     fetch(`${API}/api/projects/${PROJECT}/retry`, {
@@ -19,6 +21,39 @@ export default function App() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ node_id: nodeId }),
     });
+  }, []);
+
+  // Ask the backend for a scene to storyboard. Gemini writes an original one;
+  // a curated sample stands in if that call fails, so the button always works.
+  const onRandomScript = useCallback(async () => {
+    setBusyScript(true);
+    try {
+      const r = await fetch(`${API}/api/projects/${PROJECT}/random-script`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ genre: "" }),
+      });
+      const data = await r.json();
+      if (data.script) setScript(data.script);
+    } finally {
+      setBusyScript(false);
+    }
+  }, []);
+
+  // Generated look frames live server-side, so the note comes back here and
+  // the frames arrive on the look_dev node over the socket.
+  const onRandomLook = useCallback(async () => {
+    setBusyLook(true);
+    try {
+      const r = await fetch(`${API}/api/projects/${PROJECT}/random-look`, {
+        method: "POST",
+      });
+      const data = await r.json();
+      if (data.note) setLookNote(data.note);
+      setFiles([]);
+    } finally {
+      setBusyLook(false);
+    }
   }, []);
 
   const onExpand = useCallback(
@@ -55,8 +90,10 @@ export default function App() {
       script, onScript: setScript,
       lookNote, onLookNote: setLookNote,
       onRetry, onExpand,
+      onRandomScript, onRandomLook, busyScript, busyLook,
     }),
-    [files, script, lookNote, onRetry, onExpand]
+    [files, script, lookNote, onRetry, onExpand,
+     onRandomScript, onRandomLook, busyScript, busyLook]
   );
 
   return (

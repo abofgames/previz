@@ -23,7 +23,7 @@ from google.adk.sessions import InMemorySessionService
 from google.adk.tools import FunctionTool
 from google.genai import types
 
-from ..clients.gemini import DEFAULT_TEXT_MODEL
+from ..clients.gemini import DEFAULT_TEXT_MODEL, pace
 from ..clients.parallel_search import format_findings
 from ..clients.prompts import RESEARCH_PROMPT
 from ..models import Citation, ResearchDossier
@@ -65,8 +65,25 @@ class _SearchToolState:
         self.searches = 0
 
     def record(self, cites: list[Citation]) -> None:
-        seen = {c.url for c in self.citations}
-        self.citations.extend(c for c in cites if c.url and c.url not in seen)
+        seen = {_dedup_key(c.url) for c in self.citations}
+        for c in cites:
+            key = _dedup_key(c.url)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            self.citations.append(c)
+
+
+def _dedup_key(url: str) -> str:
+    """Identity of a page for dedup purposes.
+
+    Search passes return the same article under different tracking query
+    strings, which would otherwise show up as separate sources in the UI.
+    """
+    if not url:
+        return ""
+    base = url.split("#", 1)[0].split("?", 1)[0].rstrip("/")
+    return base.lower().replace("://www.", "://")
 
 
 def _build_tool(search_client, state: _SearchToolState):
@@ -129,16 +146,32 @@ async def research_scene(
         look_note=look_note or "(none given)",
     )
 
+    # ADK issues its own Gemini calls, so this pacing gate is the only place we
+    # can keep the agent's turns inside the free tier's 5 requests/minute.
+    await pace()
+
     final_text = ""
-    async for event in runner.run_async(
-        user_id="previz",
-        session_id=session.id,
-        new_message=types.Content(role="user", parts=[types.Part.from_text(text=prompt)]),
-    ):
-        if event.is_final_response() and event.content and event.content.parts:
-            final_text = "".join(p.text or "" for p in event.content.parts).strip()
+    agent_error: Exception | None = None
+    try:
+        async for event in runner.run_async(
+            user_id="previz",
+            session_id=session.id,
+            new_message=types.Content(
+                role="user", parts=[types.Part.from_text(text=prompt)]
+            ),
+        ):
+            if event.is_final_response() and event.content and event.content.parts:
+                final_text = "".join(p.text or "" for p in event.content.parts).strip()
+    except Exception as exc:  # noqa: BLE001
+        # The agent's closing turn can be rate-limited after its searches have
+        # already run and been billed. Those results are on hand, so salvage
+        # them rather than discarding paid work and reporting nothing.
+        agent_error = exc
+        log.warning("dossier %s: agent turn failed (%s)", scene_id, str(exc)[:160])
 
     dossier = _parse(final_text, scene_id)
+    if agent_error is not None and not final_text and state.citations:
+        dossier = _salvage(scene_id, state)
 
     # The tool's own record of what came back is authoritative — it cannot be
     # hallucinated. Anything the model cited that the tool never returned is
@@ -150,6 +183,21 @@ async def research_scene(
         len(dossier.citations),
     )
     return dossier
+
+
+def _salvage(scene_id: str, state: "_SearchToolState") -> ResearchDossier:
+    """Build a usable dossier straight from what the search tool returned.
+
+    Less polished than the agent's own synthesis, but the excerpts are real and
+    cited, which is what the downstream prompts actually consume.
+    """
+    excerpts = [c.excerpt for c in state.citations if c.excerpt][:6]
+    return ResearchDossier(
+        scene_id=scene_id,
+        objective="Recovered from search results (the agent's final turn was rate-limited)",
+        location_notes=" ".join(excerpts)[:1500],
+        citations=state.citations,
+    )
 
 
 def _parse(text: str, scene_id: str) -> ResearchDossier:
