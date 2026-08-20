@@ -1,0 +1,90 @@
+import { useRef } from "react";
+import { Handle, Position, type NodeProps } from "reactflow";
+import { CardShell, CardHeader, ErrorText } from "./shared";
+import { KIND_THEMES } from "../kindThemes";
+import type { NodeStatus } from "../../types";
+
+export type LookDevNodeData = {
+  label: string;
+  status: NodeStatus;
+  files: File[];
+  onFiles: (f: File[]) => void;
+  lookNote: string;
+  onLookNote: (s: string) => void;
+  error?: string;
+};
+
+export default function LookDevNode({ data }: NodeProps<LookDevNodeData>) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const theme = KIND_THEMES.look_dev;
+
+  return (
+    <CardShell status={data.status} kind="look_dev" width={300}>
+      <Handle type="target" position={Position.Top} style={{ background: "#52525b" }} />
+      <CardHeader label={data.label} kind="look_dev" status={data.status} />
+
+      <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+        <label
+          className="nodrag"
+          onClick={() => inputRef.current?.click()}
+          style={{
+            border: `1.5px dashed ${theme.accent}66`,
+            borderRadius: 8,
+            padding: "10px 8px",
+            textAlign: "center",
+            color: theme.accent,
+            fontSize: 11,
+            cursor: "pointer",
+          }}
+        >
+          {data.files.length
+            ? `${data.files.length} reference frame${data.files.length > 1 ? "s" : ""}`
+            : "+ reference frames"}
+          <input
+            ref={inputRef}
+            type="file"
+            multiple
+            accept="image/*"
+            style={{ display: "none" }}
+            onChange={(e) => data.onFiles(Array.from(e.target.files ?? []))}
+          />
+        </label>
+
+        {data.files.length > 0 && (
+          <div style={{ color: "#71717a", fontSize: 10, lineHeight: 1.5 }}>
+            {data.files.slice(0, 4).map((f) => (
+              <div key={f.name} style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                {f.name}
+              </div>
+            ))}
+            {data.files.length > 4 && <div>+{data.files.length - 4} more</div>}
+          </div>
+        )}
+
+        <textarea
+          className="nodrag nowheel"
+          value={data.lookNote}
+          onChange={(e) => data.onLookNote(e.target.value)}
+          placeholder='Director&apos;s look note — e.g. "night exteriors like Michael Mann, single sodium source, let the shadows go black"'
+          style={{
+            width: "100%",
+            height: 76,
+            resize: "none",
+            boxSizing: "border-box",
+            background: "#0f1115",
+            color: "#e4e4e7",
+            border: "1px solid #232936",
+            borderRadius: 8,
+            padding: 8,
+            fontSize: 11,
+            fontFamily: "ui-sans-serif, system-ui, sans-serif",
+            lineHeight: 1.4,
+          }}
+        />
+      </div>
+
+      <ErrorText error={data.error} />
+      <Handle type="source" position={Position.Bottom} style={{ background: "#52525b" }} />
+    </CardShell>
+  );
+}
