@@ -72,6 +72,16 @@ reference frames and a look note into **Look Development**, and hit
 **Break down script**. When the graph fans out, click **Draw** on any plate or
 panel.
 
+**No screenplay to hand?** Two dice buttons cover it:
+
+- **🎲 Write me a scene** — Gemini writes an original screenplay excerpt.
+  Text-only, so it works on the free tier. Falls back to a curated sample if
+  the call fails.
+- **🎲 Generate a look** — picks a look preset and produces its reference
+  frames. With a billed key Gemini draws them; otherwise they are composed
+  from the preset's palette as lighting studies, which carries the palette,
+  contrast ratio and falloff that look-conditioning actually transmits.
+
 ### Keys
 
 | Variable | Where to get it | Needed for |
@@ -80,12 +90,29 @@ panel.
 | `PARALLEL_API_KEY` | [platform.parallel.ai](https://platform.parallel.ai) | Live visual research |
 
 **Both are optional.** With placeholder keys the app runs end to end on mock
-clients — canned breakdown, Pillow placeholder images, mock citations — so you
-can see the whole flow before spending a single token.
+clients — canned breakdown, placeholder images, mock citations — so you can see
+the whole flow before spending a single token.
 
-`gemini-2.5-flash-image` is the image model because it has a real free daily
-quota; `gemini-3-pro-image` is 0 RPD on the free tier. Check your own limits at
-[aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit).
+### What the Gemini free tier actually gives you
+
+Verified against the live API, not the docs:
+
+| | Free tier | Notes |
+|---|---|---|
+| Text (`gemini-2.5-flash`) | **5 requests/minute** | Enough — the app paces itself to fit |
+| Image (every image model) | **`limit: 0`** | Not "used up" — never granted |
+
+So on a free key: breakdown, research, look development and the script/look
+generators all work. **Storyboard panels and reference plates need a billed
+key** — enable billing on the Cloud project behind the key.
+
+The app is built for that limit rather than against it. Every Gemini call is
+paced through a shared 5 RPM bucket, per-minute 429s are retried using the
+server's own `retryDelay`, scenes are researched one at a time, and when the
+research agent's closing turn is rate-limited its already-paid-for search
+results are salvaged into a dossier instead of thrown away.
+
+Override the pace with `GEMINI_RPM` once billing raises your tier.
 
 ### Smoke tests
 
