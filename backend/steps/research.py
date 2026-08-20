@@ -6,6 +6,7 @@ import json
 import logging
 
 from ..agents.research import ensure_adk_credentials, research_scene
+from ..clients.gemini import DEFAULT_TEXT_MODEL
 from ..models import ResearchDossier, ScriptBreakdown
 from ..project import ProjectPaths
 
@@ -86,6 +87,9 @@ async def run_scene(
             look_note=look_note,
             characters=_names(breakdown.characters, scene.character_ids),
             location=_location(breakdown, scene.location_id),
+            # Use whatever model the text client has rolled to, so the agent
+            # doesn't go back to one whose daily quota is already spent.
+            model=getattr(text_client, "model", None) or DEFAULT_TEXT_MODEL,
         )
 
     dest.parent.mkdir(parents=True, exist_ok=True)

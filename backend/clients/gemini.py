@@ -40,7 +40,19 @@ from .prompts import (
 
 log = logging.getLogger("gemini")
 
-DEFAULT_TEXT_MODEL = "gemini-2.5-flash"
+# The free tier grants a *per-model* daily quota (20/day on 2.5-flash), so when
+# one model is spent the others are untouched. The client walks this chain
+# rather than failing the run — all Google models, so the Google-AI-only rule
+# still holds. Verified reachable and schema-capable on a free key.
+DEFAULT_TEXT_MODEL = "gemini-3.5-flash"
+TEXT_MODEL_CHAIN = [
+    "gemini-3.5-flash",
+    "gemini-3.6-flash",
+    "gemini-3-flash-preview",
+    "gemini-3.1-flash-lite",
+    "gemini-2.5-flash",
+    "gemma-4-31b-it",
+]
 # Verified against the live API: EVERY Gemini image model reports
 # `limit: 0` on the free tier — image generation needs a billed key. 2.5 Flash
 # Image is still the right target because it is the cheapest once billing is on.
@@ -80,6 +92,12 @@ async def pace() -> None:
         await asyncio.sleep(wait)
 
 
+def _is_daily_quota(msg: str) -> bool:
+    """A per-DAY quota is gone until midnight Pacific; a per-MINUTE one clears
+    in under a minute. Only the former is worth switching models over."""
+    return "PerDay" in msg or "RequestsPerDay" in msg
+
+
 def _retry_after(msg: str) -> float | None:
     """Pull the server's own retryDelay out of a 429 body, if it gave one."""
     m = re.search(r"retryDelay['\"]?:\s*['\"]?(\d+(?:\.\d+)?)s", msg)
@@ -99,9 +117,11 @@ def _friendly(exc: Exception, what: str) -> RuntimeError:
                 "tier (quota limit is 0). It needs a billed API key — enable "
                 "billing on the Cloud project behind this key."
             )
+        scope = "daily" if _is_daily_quota(msg) else "per-minute"
+        quota_id = "PerDay" if _is_daily_quota(msg) else "PerMinute"
         return RuntimeError(
-            f"{what}: Gemini quota exhausted. Daily quotas reset at midnight "
-            "Pacific — check aistudio.google.com/rate-limit."
+            f"{what}: Gemini {scope} quota exhausted ({quota_id}). Daily quotas "
+            "reset at midnight Pacific — check aistudio.google.com/rate-limit."
         )
     if "401" in msg or "403" in msg or "API key" in msg:
         return RuntimeError(f"{what}: Gemini rejected the API key — check GEMINI_API_KEY.")
@@ -128,6 +148,12 @@ async def _with_retry(coro_factory, *, what: str):
         except Exception as e:  # noqa: BLE001 - SDK raises a wide range
             msg = str(e)
             last = e
+            # A daily-quota 429 also carries a retryDelay, but that delay only
+            # refers to the per-minute throttle — the daily budget is gone until
+            # midnight. Bail out immediately so the caller can switch models
+            # instead of sleeping through three pointless retries.
+            if "429" in msg and _is_daily_quota(msg):
+                raise _friendly(e, what) from e
             if "429" in msg and "limit: 0" not in msg and attempt < _MAX_ATTEMPTS:
                 delay = _retry_after(msg) or (_BACKOFF_BASE_S * 2**attempt)
                 log.warning("%s: rate limited, waiting %.0fs (%d/%d)",
@@ -178,23 +204,48 @@ class GeminiText(MockTextClient):
     def __init__(self, api_key: str, model: str = DEFAULT_TEXT_MODEL) -> None:
         super().__init__(mock=False)
         self._client = genai.Client(api_key=api_key)
-        self._model = model
+        # Preferred model first, then the rest of the chain as fallbacks.
+        self._chain = [model] + [m for m in TEXT_MODEL_CHAIN if m != model]
+        self._idx = 0
+
+    @property
+    def model(self) -> str:
+        """The model currently in use — may have rolled forward from the
+        configured one after a daily quota ran out."""
+        return self._chain[self._idx]
+
+    def _next_model(self) -> bool:
+        """Roll to the next model in the chain. False when none are left."""
+        if self._idx + 1 >= len(self._chain):
+            return False
+        self._idx += 1
+        log.warning("daily quota spent — switching to %s", self.model)
+        return True
 
     async def _generate(self, contents, *, schema=None, temperature: float = 0.5) -> str:
         cfg = types.GenerateContentConfig(temperature=temperature)
         if schema is not None:
             cfg.response_mime_type = "application/json"
             cfg.response_schema = schema
-        resp = await _with_retry(
-            lambda: self._client.aio.models.generate_content(
-                model=self._model, contents=contents, config=cfg
-            ),
-            what="Gemini text",
-        )
-        text = (resp.text or "").strip()
-        if not text:
-            raise RuntimeError("Gemini returned an empty response")
-        return text
+
+        while True:
+            model = self.model
+            try:
+                resp = await _with_retry(
+                    lambda: self._client.aio.models.generate_content(
+                        model=model, contents=contents, config=cfg
+                    ),
+                    what=f"Gemini text ({model})",
+                )
+            except RuntimeError as exc:
+                # A spent daily quota on one model says nothing about the next.
+                if _is_daily_quota(str(exc)) and self._next_model():
+                    continue
+                raise
+            text = (resp.text or "").strip()
+            if not text:
+                raise RuntimeError("Gemini returned an empty response")
+            return text
 
     async def write_script(self, genre: str = "") -> str:
         """Write an original scene to storyboard, for when the user has no

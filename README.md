@@ -99,20 +99,32 @@ Verified against the live API, not the docs:
 
 | | Free tier | Notes |
 |---|---|---|
-| Text (`gemini-2.5-flash`) | **5 requests/minute** | Enough — the app paces itself to fit |
-| Image (every image model) | **`limit: 0`** | Not "used up" — never granted |
+| Text, per minute | **5 requests** | The app paces itself to fit |
+| Text, per day | **20 requests, per model** | Quota is per-model, so the app rolls to the next model when one runs dry |
+| Image, every model | **`limit: 0`** | Not "used up" — never granted |
+
+Image generation was checked on `gemini-2.5-flash-image`, `gemini-3-pro-image`,
+`gemini-3.1-flash-image`, `gemini-3.1-flash-lite-image` and
+`nano-banana-pro-preview`. All report `limit: 0`.
 
 So on a free key: breakdown, research, look development and the script/look
 generators all work. **Storyboard panels and reference plates need a billed
 key** — enable billing on the Cloud project behind the key.
 
-The app is built for that limit rather than against it. Every Gemini call is
-paced through a shared 5 RPM bucket, per-minute 429s are retried using the
-server's own `retryDelay`, scenes are researched one at a time, and when the
-research agent's closing turn is rate-limited its already-paid-for search
-results are salvaged into a dossier instead of thrown away.
+The app is built for those limits rather than against them:
 
-Override the pace with `GEMINI_RPM` once billing raises your tier.
+- Every Gemini call is paced through a shared **5 RPM** bucket.
+- **Per-minute** 429s are retried using the server's own `retryDelay`.
+- **Per-day** 429s skip retrying entirely — the budget is gone until midnight
+  Pacific — and the client **rolls forward to the next model in the chain**
+  (`gemini-3.5-flash` → `3.6-flash` → `3-flash-preview` → `3.1-flash-lite` →
+  `2.5-flash` → `gemma-4-31b-it`). All Google models, so the Google-AI-only
+  rule still holds.
+- Scenes are researched one at a time.
+- If the research agent's closing turn is rate-limited, the search results it
+  already paid for are salvaged into a dossier instead of thrown away.
+
+Raise `GEMINI_RPM` once billing lifts your tier.
 
 ### Smoke tests
 
