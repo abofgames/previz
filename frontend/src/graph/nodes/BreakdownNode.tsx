@@ -29,10 +29,20 @@ It is warm.
           How long has this been here?`;
 
 export default function BreakdownNode({ data }: NodeProps<BreakdownNodeData>) {
+  const filled = data.script.trim().length > 0;
+  const notRunYet = data.status === "pending";
+  const ready = filled && notRunYet;
+
   return (
     <CardShell status={data.status} kind="breakdown" width={360}>
       <Handle type="target" position={Position.Top} style={{ background: "#52525b" }} />
-      <CardHeader label={data.label} kind="breakdown" status={data.status} />
+      <CardHeader
+        label={data.label}
+        kind="breakdown"
+        status={data.status}
+        ready={ready}
+        pill={notRunYet ? (filled ? "ready" : "needs a script") : undefined}
+      />
 
       <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
         <button
@@ -103,6 +113,20 @@ export default function BreakdownNode({ data }: NodeProps<BreakdownNodeData>) {
               <div style={{ fontSize: 9, color: "#71717a", letterSpacing: 0.4 }}>{label}</div>
             </div>
           ))}
+        </div>
+      )}
+
+      {ready && (
+        <div
+          style={{
+            padding: "6px 10px",
+            borderTop: "1px solid #232936",
+            fontSize: 10,
+            color: "#34d399",
+            fontWeight: 600,
+          }}
+        >
+          ↑ Now press “Break down script” in the top bar
         </div>
       )}
 

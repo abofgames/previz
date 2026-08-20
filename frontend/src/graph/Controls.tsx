@@ -18,13 +18,15 @@ export default function Controls({
   log: string[];
 }) {
   const anyRunning = graph.nodes.some((n) => n.status === "running");
-  const drawn = graph.nodes.filter(
-    (n) => (n.kind === "shot" || n.kind === "character" || n.kind === "location") &&
-      n.status === "complete"
-  ).length;
+  const hasScript = script.trim().length > 0;
+  // The graph only grows past its three input cards once a breakdown has run,
+  // so node count is a reliable read on whether this production has started.
+  const hasRun = graph.nodes.length > 3;
+
   const drawable = graph.nodes.filter(
     (n) => n.kind === "shot" || n.kind === "character" || n.kind === "location"
-  ).length;
+  );
+  const drawn = drawable.filter((n) => n.status === "complete").length;
 
   const onStart = () => {
     const fd = new FormData();
@@ -34,6 +36,20 @@ export default function Controls({
     for (const f of files) fd.append("look_refs", f, f.name);
     fetch(`${API}/api/projects/${project}/start`, { method: "POST", body: fd });
   };
+
+  // One line saying what to do next, so a "pending" card is never a puzzle.
+  const hint = anyRunning
+    ? "Agents are working — the graph updates live"
+    : !hasScript
+    ? "Start with 🎲 Write me a scene, or paste your own screenplay"
+    : !hasRun
+    ? "Script ready — press Break down script"
+    : drawn < drawable.length
+    ? `Press Draw on any card — ${drawn}/${drawable.length} drawn`
+    : "Every card drawn";
+
+  const disabled = anyRunning || !hasScript;
+  const urgent = hasScript && !hasRun && !anyRunning;
 
   return (
     <div
@@ -54,23 +70,36 @@ export default function Controls({
       <span style={{ color: "#52525b" }}>·</span>
       <span style={{ color: "#a1a1aa" }}>{project}</span>
 
-      {drawable > 0 && (
-        <span style={{ color: "#71717a", fontSize: 11, fontFamily: "ui-monospace, monospace" }}>
-          {drawn}/{drawable} drawn
+      <div
+        style={{
+          flex: 1,
+          minWidth: 0,
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+        }}
+      >
+        <span
+          style={{
+            color: urgent ? "#34d399" : "#71717a",
+            fontSize: 11.5,
+            fontWeight: urgent ? 700 : 400,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {hint}
         </span>
-      )}
-
-      <div style={{ flex: 1, minWidth: 0 }}>
         {log.length > 0 && (
           <span
             style={{
-              color: "#52525b",
-              fontSize: 11,
+              color: "#3f3f46",
+              fontSize: 10.5,
               fontFamily: "ui-monospace, monospace",
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
-              display: "block",
             }}
           >
             {log[log.length - 1]}
@@ -78,23 +107,24 @@ export default function Controls({
         )}
       </div>
 
-      <button onClick={onStart} disabled={anyRunning} style={btn("#3b82f6", anyRunning)}>
-        {anyRunning ? "Working…" : "Break down script"}
+      <button onClick={onStart} disabled={disabled} style={btn(disabled, urgent)}>
+        {anyRunning ? "Working…" : hasRun ? "Re-run breakdown" : "▶ Break down script"}
       </button>
     </div>
   );
 }
 
-function btn(color: string, disabled: boolean): CSSProperties {
+function btn(disabled: boolean, urgent: boolean): CSSProperties {
   return {
-    background: disabled ? "#1f2530" : color,
+    background: disabled ? "#1f2530" : urgent ? "#34d399" : "#3b82f6",
     color: disabled ? "#71717a" : "#0f1115",
     border: "none",
     borderRadius: 6,
-    padding: "6px 14px",
+    padding: "7px 16px",
     fontSize: 13,
     fontWeight: 700,
     cursor: disabled ? "default" : "pointer",
     whiteSpace: "nowrap",
+    boxShadow: urgent ? "0 0 0 3px #34d39933" : "none",
   };
 }

@@ -22,11 +22,27 @@ export type LookDevNodeData = {
 export default function LookDevNode({ data }: NodeProps<LookDevNodeData>) {
   const inputRef = useRef<HTMLInputElement>(null);
   const theme = KIND_THEMES.look_dev;
+  const hasLook =
+    (data.refUrls?.length ?? 0) > 0 ||
+    data.files.length > 0 ||
+    data.lookNote.trim().length > 0;
 
   return (
     <CardShell status={data.status} kind="look_dev" width={300}>
       <Handle type="target" position={Position.Top} style={{ background: "#52525b" }} />
-      <CardHeader label={data.label} kind="look_dev" status={data.status} />
+      <CardHeader
+        label={data.label}
+        kind="look_dev"
+        status={data.status}
+        ready={hasLook && data.status === "pending"}
+        pill={
+          data.status === "pending"
+            ? hasLook
+              ? "ready"
+              : "optional"
+            : undefined
+        }
+      />
 
       <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
         <button

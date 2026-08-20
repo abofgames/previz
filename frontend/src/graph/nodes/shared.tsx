@@ -3,8 +3,20 @@ import type { NodeKind, NodeStatus } from "../../types";
 import { STATUS_COLORS } from "../nodeStyles";
 import { KIND_THEMES } from "../kindThemes";
 
-export function StatusPill({ status }: { status: NodeStatus }) {
-  const c = STATUS_COLORS[status];
+export function StatusPill({
+  status,
+  label,
+  ready,
+}: {
+  status: NodeStatus;
+  label?: string;
+  ready?: boolean;
+}) {
+  // An input card that has content isn't "pending" in any sense the user
+  // cares about — it's filled in and waiting for them to press Run.
+  const c = ready
+    ? { bg: "#1d3a2e", border: "#34d399", fg: "#a7f3d0" }
+    : STATUS_COLORS[status];
   return (
     <span
       style={{
@@ -20,7 +32,7 @@ export function StatusPill({ status }: { status: NodeStatus }) {
         border: `1px solid ${c.border}`,
       }}
     >
-      {status}
+      {label ?? status}
     </span>
   );
 }
@@ -63,11 +75,15 @@ export function CardHeader({
   kind,
   status,
   onRetry,
+  pill,
+  ready,
 }: {
   label: string;
   kind: NodeKind;
   status: NodeStatus;
   onRetry?: () => void;
+  pill?: string;
+  ready?: boolean;
 }) {
   const theme = KIND_THEMES[kind];
   return (
@@ -106,7 +122,7 @@ export function CardHeader({
           {label}
         </div>
       </div>
-      <StatusPill status={status} />
+      <StatusPill status={status} label={pill} ready={ready} />
       {onRetry && (
         <button
           onClick={onRetry}
