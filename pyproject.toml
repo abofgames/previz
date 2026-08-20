@@ -1,0 +1,24 @@
+[project]
+name = "previz"
+version = "0.1.0"
+description = "Agentic pre-production: script in, researched storyboard out."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "websockets>=13",
+    "pillow>=10",
+    "python-dotenv>=1.0",
+    "python-multipart>=0.0.9",
+    "google-genai>=1.0",
+    "google-adk>=1.0",
+    "parallel-web>=0.1",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["backend*"]
