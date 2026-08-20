@@ -64,13 +64,16 @@ export default function App() {
       const url = typeof meta.image_url === "string" ? meta.image_url : "";
       if (!url) return;
 
-      // Panels show the sources that shaped their scene, so the reasoning
-      // behind a frame is one click away from the frame itself.
-      const sceneId = typeof meta.scene_id === "string" ? meta.scene_id : undefined;
+      // Sources behind this exact image, one click from the image itself.
+      // A plate carries its own targeted research; a panel falls back to the
+      // scene-level dossier, which is what actually shaped it.
+      const own = meta.citations as Citation[] | undefined;
       const research = graph.nodes.find((n) => n.kind === "research");
       const citations =
-        sceneId && research
-          ? ((research.meta?.citations as Citation[] | undefined) ?? [])
+        own && own.length > 0
+          ? own
+          : typeof meta.scene_id === "string"
+          ? ((research?.meta?.citations as Citation[] | undefined) ?? [])
           : undefined;
 
       setLightbox({

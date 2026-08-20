@@ -38,7 +38,20 @@ def make_text_client() -> MockTextClient:
     return MockTextClient()
 
 
+def mock_images() -> bool:
+    """Force placeholder image generation even with a valid key.
+
+    Image generation is the one part of the pipeline that needs a billed key.
+    This lets the whole flow — including the reference chain and the real
+    prompts — be exercised and demoed while billing is pending.
+    """
+    return (os.environ.get("MOCK_IMAGES") or "0").strip().lower() in ("1", "true", "yes")
+
+
 def make_image_client() -> MockImageClient:
+    if mock_images():
+        log.info("image client: MockImageClient (MOCK_IMAGES=1)")
+        return MockImageClient()
     key = _key("GEMINI_API_KEY")
     if key:
         model = _model("GEMINI_IMAGE_MODEL", DEFAULT_IMAGE_MODEL)

@@ -48,9 +48,31 @@ answer before it draws, and shows you what it read.
 | **Gemini 2.5 Flash Image** | `backend/clients/gemini.py` → `GeminiImage` | Generates plates and panels, conditioned on inline reference images |
 | **Google ADK** | `backend/agents/research.py` | The research agent — `LlmAgent` on Gemini, driven by `Runner`, with the Parallel search tool |
 | **Veo** (optional) | `backend/clients/gemini.py` → `GeminiImage.animate` | Turns a panel into an animatic clip. Off by default — Veo has no free tier |
-| **Parallel Search API** | `backend/clients/parallel_search.py` | Live web search, called by the agent as a `FunctionTool`; results are normalized to citations, cached per query, and surfaced in the UI |
+| **Parallel Search API** | `backend/clients/parallel_search.py` | Live web search in four places — see below |
 
 No other AI provider is used anywhere in this codebase or its dependency tree.
+
+### Where Parallel is called
+
+Gemini requests are the scarce resource (20/day/model on the free tier);
+Parallel searches cost $0.001. So previz searches generously and reasons
+sparingly — three of these four passes add **zero** extra model calls, because
+they feed a Gemini call that was already going to happen.
+
+| Pass | Where | What it changes |
+|---|---|---|
+| **Scene research** | `agents/research.py` — an ADK agent with a `FunctionTool`, 2-3 searches per scene | The dossier behind every panel in that scene |
+| **Character wardrobe** | `steps/entity_research.py` → the plate prompt | The single highest-value pass. A 1974 script yields *"faded pale blue short-sleeved button-up, open collar, dark necktie"* from period clothing archives, instead of *"business casual"* |
+| **Location design** | `steps/entity_research.py` → the plate prompt | Architecture, fittings, materials, wear |
+| **Look influences** | `steps/look_dev.py` → the look block | Turns *"like Michael Mann"* into actual technique — source placement, contrast ratio, lens habits |
+
+The era is detected from the script's title and logline and threaded into every
+query, because wrong-period wardrobe is the most visible research failure.
+
+Results are filtered before they reach a prompt: stock-image marketplaces and
+pages whose text is a comma-separated keyword list are dropped, since they
+carry no describable substance. Everything is cached per query, so re-running a
+production re-bills nothing.
 
 ---
 
@@ -125,6 +147,17 @@ The app is built for those limits rather than against them:
   already paid for are salvaged into a dossier instead of thrown away.
 
 Raise `GEMINI_RPM` once billing lifts your tier.
+
+### Demoing before billing
+
+```bash
+MOCK_IMAGES=1 uvicorn backend.main:app --port 8000
+```
+
+Placeholder images, everything else real — the breakdown, the research agent,
+the wardrobe and location passes, the reference chain and the exact prompts all
+run for real. Only the final pixels are stubbed. Set it back to `0` the moment
+billing lands; no other change is needed.
 
 ### Smoke tests
 

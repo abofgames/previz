@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import re
 import time
 
 from . import ids
@@ -228,7 +229,8 @@ class ProjectRunner:
         sig = self._look_sig()
         force = _read_marker(self.paths.look_inputs_marker) != sig
         try:
-            await look_dev.run(self.paths, self.text_client, self.look_note, force=force)
+            await look_dev.run(self.paths, self.text_client, self.look_note,
+                               search_client=self.search_client, force=force)
         except Exception as exc:
             await self._fail(ids.NODE_LOOK_DEV, "look development", exc)
             raise
@@ -311,7 +313,8 @@ class ProjectRunner:
         try:
             if node.kind == "lookboard":
                 await self._begin(node.id)
-                await look_dev.run(self.paths, self.text_client, self.look_note, force=True)
+                await look_dev.run(self.paths, self.text_client, self.look_note,
+                                   search_client=self.search_client, force=True)
                 await self._set_meta(node.id, {
                     "image_url": self._url_for(self.paths.lookboard_image),
                     "look": self._look_block_dict(),
@@ -338,26 +341,32 @@ class ProjectRunner:
                 cid = node.meta.get("character_id")
                 char = next(c for c in b.characters if c.id == cid)
                 await self._begin(node.id)
-                await plates.gen_character(
+                cites = await plates.gen_character(
                     self.paths, char,
                     text_client=self.text_client, image_client=self.image_client,
+                    search_client=self.search_client,
                     look=self._load_look(), dossier=self._dossier_for_character(b, cid),
-                    force=True,
+                    period=self._period(b), force=True,
                 )
-                await self._publish_artifact(node.id, ids.char_ref(char.id), kind="ref")
+                await self._publish_artifact(
+                    node.id, ids.char_ref(char.id), kind="ref", citations=cites
+                )
                 return
 
             if node.kind == "location":
                 lid = node.meta.get("location_id")
                 loc = next(l for l in b.locations if l.id == lid)
                 await self._begin(node.id)
-                await plates.gen_location(
+                cites = await plates.gen_location(
                     self.paths, loc,
                     text_client=self.text_client, image_client=self.image_client,
+                    search_client=self.search_client,
                     look=self._load_look(), dossier=self._dossier_for_location(b, lid),
-                    force=True,
+                    period=self._period(b), force=True,
                 )
-                await self._publish_artifact(node.id, ids.loc_ref(loc.id), kind="ref")
+                await self._publish_artifact(
+                    node.id, ids.loc_ref(loc.id), kind="ref", citations=cites
+                )
                 return
 
             if node.kind == "shot":
@@ -388,7 +397,17 @@ class ProjectRunner:
             log.exception("generate failed for %s", node.id)
             await self._fail(node.id, node.id, exc)
 
-    async def _publish_artifact(self, node_id: str, artifact_id: str, *, kind: str) -> None:
+    def _period(self, b: ScriptBreakdown) -> str:
+        """Era hint for research queries, read off the logline if the script
+        states one. Wrong-period wardrobe is the most visible research failure,
+        so this is worth threading through."""
+        text = f"{b.title} {b.logline}"
+        m = re.search(r"\b(1[89]\d0s|20[0-4]0s|\b1\d{3}\b)", text)
+        return m.group(1) if m else ""
+
+    async def _publish_artifact(
+        self, node_id: str, artifact_id: str, *, kind: str, citations=None
+    ) -> None:
         image = (
             self.paths.ref_image(artifact_id) if kind == "ref"
             else self.paths.shot_image(artifact_id)
@@ -400,6 +419,8 @@ class ProjectRunner:
         meta = {"image_url": self._url_for(image)}
         if prompt.exists():
             meta["prompt"] = prompt.read_text()
+        if citations:
+            meta["citations"] = [{"title": c.title, "url": c.url} for c in citations]
         await self._set_meta(node_id, meta)
         await self._set_status(node_id, NodeStatus.complete)
 

@@ -15,6 +15,7 @@ from PIL import Image, ImageDraw
 
 from ..models import LookBlock
 from ..project import ProjectPaths
+from . import entity_research
 
 log = logging.getLogger("steps.look_dev")
 
@@ -33,7 +34,8 @@ def look_refs(paths: ProjectPaths) -> list[Path]:
 
 
 async def run(
-    paths: ProjectPaths, text_client, look_note: str = "", *, force: bool = False
+    paths: ProjectPaths, text_client, look_note: str = "", *,
+    search_client=None, force: bool = False,
 ) -> LookBlock:
     dest = paths.look_block
     if dest.exists() and paths.lookboard_image.exists() and not force:
@@ -44,7 +46,20 @@ async def run(
     paths.look_note.write_text(look_note)
 
     refs = look_refs(paths)
-    data = await text_client.look_block(refs, look_note)
+
+    # A look note names references the model only half-knows ("like Michael
+    # Mann"). Searching turns the name into technique — source placement,
+    # contrast ratio, lens habits — before the look block is written.
+    note = look_note
+    if search_client is not None:
+        cites = await entity_research.research_influences(
+            paths, look_note, search_client=search_client
+        )
+        sourced = entity_research.as_notes(cites, "Cinematography research")
+        if sourced:
+            note = f"{look_note}\n\n{sourced}"
+
+    data = await text_client.look_block(refs, note)
     block = LookBlock.model_validate(data)
 
     dest.parent.mkdir(parents=True, exist_ok=True)

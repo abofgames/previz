@@ -20,6 +20,7 @@ export type ImageNodeData = {
   prompt?: string;
   error?: string;
   spec?: ShotSpec;
+  sourceCount?: number;
   aspect: string;
   onRetry: () => void;
   onExpand: () => void;
@@ -139,6 +140,22 @@ export default function ImageNode({ data }: NodeProps<ImageNodeData>) {
           </div>
         )}
       </div>
+
+      {!!data.sourceCount && (
+        <div
+          style={{
+            padding: "4px 9px",
+            borderTop: "1px solid #232936",
+            fontSize: 9.5,
+            color: "#f97316",
+            fontWeight: 700,
+            letterSpacing: 0.3,
+          }}
+        >
+          ◆ grounded in {data.sourceCount} researched source
+          {data.sourceCount === 1 ? "" : "s"}
+        </div>
+      )}
 
       {data.spec?.description && (
         <div

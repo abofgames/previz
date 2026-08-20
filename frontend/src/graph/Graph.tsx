@@ -127,6 +127,7 @@ function buildData(node: GraphNode, cb: GraphCallbacks) {
         aspect: aspectFor(node.kind),
         imageUrl: str(meta.image_url),
         prompt: str(meta.prompt),
+        sourceCount: (meta.citations as unknown[] | undefined)?.length,
         spec: node.kind === "shot"
           ? {
               size: str(meta.size), lens: str(meta.lens),
