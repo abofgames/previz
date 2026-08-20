@@ -28,6 +28,43 @@ DEFAULT_MODE = "fast"
 DEFAULT_MAX_CHARS = 6000
 _MAX_RESULTS_KEPT = 8
 
+# Stock-image and asset marketplaces rank highly for "what does X look like"
+# queries, but their page text is SEO keyword soup ("5472x3648px, peeling
+# walls, rustic decay") with no descriptive substance. Feeding that into a
+# prompt is worse than feeding nothing, so it never reaches the dossier.
+_STOCK_HOSTS = {
+    "alamy.com", "dreamstime.com", "hippopx.com", "istockphoto.com",
+    "gettyimages.com", "vecteezy.com", "shutterstock.com", "stockcake.com",
+    "wallpaperflare.com", "123rf.com", "depositphotos.com", "freepik.com",
+    "pexels.com", "unsplash.com", "pixabay.com", "adobe.com",
+    "3dmodels.org", "turbosquid.com", "emojicombos.com", "pinterest.com",
+}
+
+# A page whose "excerpt" is mostly a comma-separated tag list carries no
+# usable direction even when the host isn't a known marketplace.
+_MIN_EXCERPT_CHARS = 80
+
+
+def _host(url: str) -> str:
+    try:
+        from urllib.parse import urlparse
+
+        return (urlparse(url).hostname or "").lower().removeprefix("www.")
+    except ValueError:
+        return ""
+
+
+def is_useful(url: str, excerpt: str) -> bool:
+    host = _host(url)
+    if any(host == h or host.endswith("." + h) for h in _STOCK_HOSTS):
+        return False
+    text = (excerpt or "").strip()
+    if len(text) < _MIN_EXCERPT_CHARS:
+        return False
+    # Keyword-list pages: many commas, few sentences.
+    commas, stops = text.count(","), text.count(". ")
+    return not (commas > 8 and stops < 2)
+
 
 class ParallelSearch:
     """Thin async wrapper over the Parallel SDK returning normalized Citations."""
@@ -64,16 +101,27 @@ class ParallelSearch:
         )
 
         citations: list[Citation] = []
-        for r in (getattr(resp, "results", None) or [])[:_MAX_RESULTS_KEPT]:
-            excerpts = getattr(r, "excerpts", None) or []
+        dropped = 0
+        for r in getattr(resp, "results", None) or []:
+            if len(citations) >= _MAX_RESULTS_KEPT:
+                break
+            url = getattr(r, "url", "")
+            excerpt = " ".join(
+                str(e) for e in (getattr(r, "excerpts", None) or [])
+            )[:1200]
+            if not is_useful(url, excerpt):
+                dropped += 1
+                continue
             citations.append(
                 Citation(
-                    title=getattr(r, "title", "") or getattr(r, "url", ""),
-                    url=getattr(r, "url", ""),
-                    excerpt=" ".join(str(e) for e in excerpts)[:1200],
+                    title=getattr(r, "title", "") or url,
+                    url=url,
+                    excerpt=excerpt,
                     publish_date=getattr(r, "publish_date", None),
                 )
             )
+        if dropped:
+            log.info("filtered %d stock/keyword results", dropped)
         self._write_cache(objective, queries, citations)
         return citations
 

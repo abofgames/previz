@@ -42,6 +42,13 @@ with genuinely different angles before you answer — one pass on the setting
 and period, one on wardrobe and props, and a third on cinematography if the
 director's note names a film, director or DP.
 
+Search for sources that DESCRIBE things in words: reporting, archives, museum
+and historical-society pages, trade and craft writing, cinematography breakdowns,
+brand and outfitter pages for garments. Do not go looking for pictures — stock
+photo and wallpaper sites carry no description, only keyword lists, and they are
+filtered out before you see them. Phrase queries accordingly: prefer
+"1970s dispatch office interior description" over "dispatch office photos".
+
 Write concrete, drawable direction: materials, silhouettes, light sources,
 architecture, specific garments. Never write thematic prose. If the searches
 did not support a claim, leave that field brief rather than inventing detail.
@@ -186,16 +193,21 @@ async def research_scene(
 
 
 def _salvage(scene_id: str, state: "_SearchToolState") -> ResearchDossier:
-    """Build a usable dossier straight from what the search tool returned.
+    """Keep the sources, discard the raw text.
 
-    Less polished than the agent's own synthesis, but the excerpts are real and
-    cited, which is what the downstream prompts actually consume.
+    An earlier version concatenated the raw excerpts into `location_notes`.
+    That was a mistake: unsynthesised excerpts are page furniture and keyword
+    lists, and because the notes fields are pasted straight into image prompts,
+    the noise reached the panels. The citations are still worth keeping — the
+    user can read them, and a re-run synthesises properly — but nothing
+    unsynthesised is allowed into a prompt.
     """
-    excerpts = [c.excerpt for c in state.citations if c.excerpt][:6]
     return ResearchDossier(
         scene_id=scene_id,
-        objective="Recovered from search results (the agent's final turn was rate-limited)",
-        location_notes=" ".join(excerpts)[:1500],
+        objective=(
+            "Sources gathered, but synthesis was rate-limited. "
+            "Press ↻ on this card to write the dossier."
+        ),
         citations=state.citations,
     )
 
