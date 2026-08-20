@@ -57,7 +57,7 @@ No other AI provider is used anywhere in this codebase or its dependency tree.
 ## Run it
 
 ```bash
-git clone <this repo> && cd previz
+git clone https://github.com/abofgames/previz.git && cd previz
 cp .env.example .env          # add your keys — see below
 python3 -m venv .venv && .venv/bin/pip install -e .
 .venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
@@ -93,6 +93,62 @@ quota; `gemini-3-pro-image` is 0 RPD on the free tier. Check your own limits at
 .venv/bin/python -m backend.clients.gemini --smoke           # text + one image round-trip
 .venv/bin/python -m backend.clients.parallel_search --smoke  # prints live titles + URLs
 ```
+
+---
+
+## Host it
+
+The container builds the UI and serves it from the Python app, so the whole
+thing is **one service on one URL** — no CORS, no separate frontend host, and
+the WebSocket rides the same origin.
+
+```bash
+docker build -t previz .
+docker run -p 8000:8000 --env-file .env previz     # http://localhost:8000
+```
+
+### Cloud Run (recommended — this is the hosted URL for the submission)
+
+```bash
+gcloud auth login
+gcloud config set project YOUR_PROJECT_ID
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com
+
+gcloud run deploy previz \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-env-vars "GEMINI_API_KEY=...,PARALLEL_API_KEY=..." \
+  --memory 1Gi --timeout 900
+```
+
+`gcloud run deploy --source .` builds the Dockerfile with Cloud Build and
+returns a public `https://previz-....run.app` URL. Cloud Run supports
+WebSockets natively, so the live graph works as-is.
+
+Two things to know about Cloud Run and this app:
+
+- **Its filesystem is ephemeral.** previz uses the filesystem as its state
+  store, so generated artifacts vanish when an instance recycles. Fine for a
+  demo; for anything persistent, back `PROJECTS_ROOT` with a GCS bucket
+  mount (`--add-volume` / `--add-volume-mount`).
+- **Set `--min-instances 1`** before recording the demo video, so a cold start
+  doesn't eat the first ten seconds.
+
+Prefer secrets over `--set-env-vars` for a real deployment:
+
+```bash
+echo -n "YOUR_KEY" | gcloud secrets create gemini-api-key --data-file=-
+gcloud run deploy previz --source . --region us-central1 \
+  --allow-unauthenticated \
+  --set-secrets "GEMINI_API_KEY=gemini-api-key:latest"
+```
+
+### Anywhere else
+
+Any host that runs a container and passes WebSockets works — Fly.io
+(`fly launch`), Render, Railway. Cloud Run is the recommendation here because
+the hackathon judges runtime use of Google Cloud.
 
 ---
 
